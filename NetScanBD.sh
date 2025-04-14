@@ -15,16 +15,23 @@ SHODAN_API_KEY=""
 NIST_API_KEY=""
 AI_MODEL="llama3"  # Ollama model name (adjust to your setup)
 
+
 # ----------------- Check Dependencies ------------------
 check_dependencies() {
     echo -e "${BLUE}[+] Checking required tools...${NC}"
-    local tools=("nmap" "masscan" "rustscan" "searchsploit" "wafw00f" "ollama" "curl" "jq")
+    local tools=("nmap" "masscan" "rustscan" "searchsploit" "wafw00f" "ollama" "curl" "jq" "sudo")
     for tool in "${tools[@]}"; do
         if ! command -v $tool &>/dev/null; then
             echo -e "${RED}[-] $tool is not installed. Please install it before running the script.${NC}"
             exit 1
         fi
     done
+
+    # Check if sudo is available
+    if ! command -v sudo &>/dev/null; then
+        echo -e "${RED}[-] sudo is not installed. Masscan and other tools might fail without sudo.${NC}"
+        exit 1
+    fi
 }
 
 # ----------------- Trap SIGINT (Ctrl+C) ----------------
