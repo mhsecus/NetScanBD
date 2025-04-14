@@ -4,8 +4,7 @@
 **Country:** Bangladesh  
 **Tool Type:** Bash Script for Network Scanning & Risk Analysis  
 **Version:** Stable  
-**License:** MIT (or whichever you choose)  
-
+**License:** MIT
 ---
 
 🧠 Features
