@@ -53,10 +53,17 @@ sudo pip install wafw00f
 
 
 🔐 API Keys Required
+Before running the script, make sure to set the following environment variables:
 
-SHODAN_API_KEY="your_shodan_key_here"
-NIST_API_KEY="your_nist_key_here"
-AI_MODEL="llama3"  # Adjust based on your Ollama config
+bash
+Copy
+Edit
+
+```bash
+export SHODAN_API_KEY="your_shodan_key_here"
+export NIST_API_KEY="your_nist_key_here"
+export AI_MODEL="llama3"  # Adjust to match your Ollama setup
+```
 
 🛠️ Usage
 bash
