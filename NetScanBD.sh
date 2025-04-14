@@ -28,7 +28,7 @@ check_dependencies() {
 }
 
 # ----------------- Trap SIGINT (Ctrl+C) ----------------
-trap "echo -e '\n[!] Ctrl+C Pressed! Use 'exit' to quit the script.'; continue" SIGINT
+trap "echo -e '\n[!] Ctrl+C Pressed! Exiting...'; exit 1" SIGINT
 
 # ----------------- Initial Setup -----------------------
 initial_setup() {
@@ -63,13 +63,17 @@ initial_setup() {
     read -p "Enable Exploit-DB lookup? (y/n): " exploit_choice
     [[ "$exploit_choice" =~ ^[Yy]$ ]] && USE_EXPLOIT=true || USE_EXPLOIT=false
 
+    # Ask about Masscan at the beginning
+    read -p "Run Masscan on targets? (y/n): " masscan_choice
+    [[ "$masscan_choice" =~ ^[Yy]$ ]] && RUN_MASSCAN=true || RUN_MASSCAN=false
+
     case $input_choice in
         1) read -p "Enter IP or domain: " TARGETS ;;
         2) 
             echo -e "${BLUE}[+] Available .txt files in current directory:${NC}"
             ls *.txt
             read -p "Enter filename (e.g. targets.txt): " file
-            if [ ! -f "$file" ]; then echo -e "${RED}[-] File not found.${NC}"; exit 1; fi
+            [ ! -f "$file" ] && echo -e "${RED}[-] File not found.${NC}" && exit 1
             TARGETS=$(cat "$file")
             ;;
         3) 
@@ -81,73 +85,87 @@ initial_setup() {
             local_net=$(echo "$local_ip" | awk -F. '{print $1"."$2"."$3".0/24"}')
             TARGETS=$(nmap -n -sn "$local_net" | awk '/Nmap scan report/{print $NF}')
             ;;
-        *) echo -e "${RED}Invalid option.${NC}"; exit 1 ;;
+        *) echo -e "${RED}Invalid option.${NC}" && exit 1 ;;
     esac
 }
 
-# ----------------- Batch Run ---------------------------
-batch_run_all() {
-    echo -e "${GREEN}[+] Starting scans...${NC}"
+# ----------------- Scan Target -------------------------
+scan_target() {
+    ip="$1"
+    echo -e "\n${YELLOW}========== SCANNING: $ip ==========${NC}"
 
-    for ip in $TARGETS; do
-        ip=$(echo "$ip" | xargs)
-        [ -z "$ip" ] && continue
+    if $STEALTH; then
+        echo -e "${GREEN}[+] Stealth scan on $ip${NC}"
+        nmap -sS --script vuln -Pn "$ip"
+    else
+        echo -e "${GREEN}[+] Running Nmap for service detection on $ip${NC}"
+        nmap -sS --script vuln -Pn "$ip"
+    fi
 
-        echo -e "\n${YELLOW}========== SCANNING: $ip ==========${NC}"
+    # Run Rustscan as an alternative to Nmap (only if needed)
+    if ! $RUN_MASSCAN; then
+        echo -e "${GREEN}[+] Running Rustscan for service discovery on $ip${NC}"
+        rustscan -a "$ip" --ulimit 5000 -- -sV
+    fi
 
-        if $STEALTH; then
-            echo -e "${GREEN}[+] Stealth scan on $ip${NC}"
-            nmap -sS --script vuln -Pn "$ip"
-        else
-            echo -e "${GREEN}[+] Fast scan on $ip${NC}"
-            nmap -sS --script vuln -Pn "$ip"
-            rustscan -a "$ip" --ulimit 5000 -- -sV
-            sudo masscan "$ip" -p1-65535 --rate=1000
-        fi
+    # Run Masscan for quick port scanning (if enabled)
+    if $RUN_MASSCAN; then
+        echo -e "${BLUE}[+] Running Masscan on $ip...${NC}"
+        sudo masscan "$ip" -p1-65535 --rate=1000
+    else
+        echo -e "${YELLOW}[-] Skipping Masscan for $ip.${NC}"
+    fi
 
-        if $USE_EXPLOIT; then
-            echo -e "${BLUE}[+] Exploit-DB Lookup for $ip...${NC}"
-            nmap -sV "$ip" -oG - | awk '/Ports/ {print $0}' | while read -r line; do
-                service=$(echo "$line" | awk -F'[()]' '{print $2}')
-                [ -n "$service" ] && searchsploit "$service"
-            done
-        fi
-
+    # Exploit-DB Lookup
+    if $USE_EXPLOIT; then
         echo -e "${BLUE}[+] Exploit-DB Lookup...${NC}"
         nmap -sV "$ip" -oG - | awk '/Ports/ {print $0}' | while read -r line; do
             service=$(echo "$line" | awk -F'[()]' '{print $2}')
             [ -n "$service" ] && searchsploit "$service"
         done
+    fi
 
-        if $USE_SHODAN; then
-            echo -e "${BLUE}[+] Shodan lookup for $ip...${NC}"
-            curl -s "https://api.shodan.io/shodan/host/$ip?key=$SHODAN_API_KEY" | jq
-        fi
+    # Shodan Lookup
+    if $USE_SHODAN; then
+        echo -e "${BLUE}[+] Shodan lookup for $ip...${NC}"
+        curl -s "https://api.shodan.io/shodan/host/$ip?key=$SHODAN_API_KEY" | jq
+    fi
 
-        if $USE_NIST; then
-            echo -e "${BLUE}[+] NIST CVE lookup for $ip...${NC}"
-            nmap -sV "$ip" -oG - | awk '/Ports/ {print $0}' | while read -r line; do
-                service=$(echo "$line" | awk -F'[()]' '{print $2}')
-                if [ -n "$service" ]; then
-                    echo -e "${BLUE}[+] Searching NVD for: $service${NC}"
-                    query=$(echo "$service" | sed 's/ /%20/g')
-                    curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=$query&apiKey=$NIST_API_KEY" | \
-                    jq '.vulnerabilities[] | {id: .cve.id, severity: .cve.metrics.cvssMetricV31[0].cvssData.baseSeverity, score: .cve.metrics.cvssMetricV31[0].cvssData.baseScore, description: .cve.descriptions[0].value}' 2>/dev/null
-                fi
-            done
-        fi
+    # NIST CVE Lookup
+    if $USE_NIST; then
+        echo -e "${BLUE}[+] NIST CVE lookup...${NC}"
+        nmap -sV "$ip" -oG - | awk '/Ports/ {print $0}' | while read -r line; do
+            service=$(echo "$line" | awk -F'[()]' '{print $2}')
+            if [ -n "$service" ]; then
+                echo -e "${BLUE}[+] Searching NVD for: $service${NC}"
+                query=$(echo "$service" | sed 's/ /%20/g')
+                curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=$query&apiKey=$NIST_API_KEY" | \
+                jq '.vulnerabilities[] | {id: .cve.id, severity: .cve.metrics.cvssMetricV31[0].cvssData.baseSeverity, score: .cve.metrics.cvssMetricV31[0].cvssData.baseScore, description: .cve.descriptions[0].value}' 2>/dev/null
+            fi
+        done
+    fi
 
-        echo -e "${BLUE}[+] WAF Detection...${NC}"
-        wafw00f "$ip"
+    # WAF Detection
+    echo -e "${BLUE}[+] WAF Detection...${NC}"
+    wafw00f "$ip"
 
-        if $USE_AI; then
-            echo -e "${BLUE}[+] AI Risk Analysis via Ollama...${NC}"
-            echo "Analyze potential network vulnerabilities and security risks for target $ip based on scan data." | ollama run "$AI_MODEL"
-        fi
+    # AI Risk Analysis
+    if $USE_AI; then
+        echo -e "${BLUE}[+] AI Risk Analysis via Ollama...${NC}"
+        echo "Analyze potential network vulnerabilities and security risks for target $ip based on scan data." | ollama run "$AI_MODEL"
+    fi
 
-        echo -e "${YELLOW}========== END OF $ip ==========${NC}"
+    echo -e "${YELLOW}========== END OF $ip ==========${NC}"
+}
+
+# ----------------- Batch Run ---------------------------
+batch_run_all() {
+    echo -e "${GREEN}[+] Starting scans...${NC}"
+    for ip in $TARGETS; do
+        ip=$(echo "$ip" | xargs)
+        [ -z "$ip" ] && continue
+        scan_target "$ip"
     done
-
     echo -e "${GREEN}[✓] All scans completed.${NC}"
 }
 
