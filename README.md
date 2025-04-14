@@ -1,4 +1,4 @@
-# NetScanBD - MHSec
+# NetScanBD by MHSec
 
 **Author:** Mahdi Hasan  
 **Country:** Bangladesh  
