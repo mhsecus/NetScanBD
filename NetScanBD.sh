@@ -11,8 +11,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # API Keys (set these before using!)
-SHODAN_API_KEY="PdhqRuEHMtJHYqfFyR5UBa4BI4bkC2aY"
-NIST_API_KEY="0b6a2003-9ce3-424e-ae1e-6b35e0a9d180"
+SHODAN_API_KEY=""
+NIST_API_KEY=""
 AI_MODEL="llama3"  # Ollama model name (adjust to your setup)
 
 # ----------------- Check Dependencies ------------------
