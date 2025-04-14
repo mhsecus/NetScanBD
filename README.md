@@ -42,14 +42,7 @@ This script is designed to:
 
 Make sure the following tools are installed before using NetScanBD:
 
-nmap
-masscan
-rustscan
-searchsploit
-wafw00f
-ollama
-curl
-jq
+Tools used: `nmap`, `masscan`, `rustscan`, `searchsploit`, `wafw00f`, `ollama`, `curl`, `jq`
 
 ```bash
 sudo apt install nmap masscan curl jq
